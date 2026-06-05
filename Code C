@@ -1,0 +1,933 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "sqlite3.h"
+#include <windows.h>
+
+#define T_BLEU  "\033[1;34m"
+#define T_VERT  "\033[0;32m"
+#define T_ROUGE "\033[0;31m"
+#define T_NOIR  "\033[0;30m"
+#define RESET   "\033[0;30;47m"
+ 
+// -------------------- UTILITAIRES --------------------
+void clean_input(char *str) {
+    str[strcspn(str,"\r\n")] = 0;  // supprime \n et \r
+}
+
+int db_execute(sqlite3 *db, const char *sql) {
+    char *err = NULL;
+    int rc = sqlite3_exec(db, sql, 0, 0, &err);
+    if (rc != SQLITE_OK) {
+        printf("SQL ERROR: %s\n", err);
+        sqlite3_free(err);
+        return 0;
+    }
+    return 1;
+}
+
+// -------------------- AFFICHAGE --------------------
+int printRow(void *NotUsed, int argc, char **argv, char **azColName) {
+
+    // Assure que chaque champ est affiche dans une colonne fixe
+
+    printf("| %-3s | %-8s | %-10s | %-12s | %-16s | %-16s | %-10s |\n",
+        argv[0] ? argv[0] : "",
+        argv[1] ? argv[1] : "",
+        argv[2] ? argv[2] : "",
+        argv[3] ? argv[3] : "",
+        argv[4] ? argv[4] : "",
+        argv[5] ? argv[5] : "",
+        argv[6] ? argv[6] : "");
+    return 0;
+}
+
+void printFlightHeader() {
+    printf("\n| %-3s | %-8s | %-10s | %-12s | %-16s | %-16s | %-10s |\n",
+   "ID","Num Vol","Origine","Destination","Date Depart","Date Arrivee","Status" );
+    printf("-------------------------------------------------------------------------------------------------\n");
+}
+
+// -------------------- VOLS --------------------
+void addFlightDB(sqlite3 *db) {
+    char num[10], org[50], dest[50], dep[20], arr[20], status[20];
+    printf("Num Vol: "); fgets(num, 10, stdin); clean_input(num);
+    printf("Origine: "); fgets(org, 50, stdin); clean_input(org);
+    printf("Destination: "); fgets(dest, 50, stdin); clean_input(dest);
+    printf("Date depart (YYYY-MM-DD HH:MM): "); fgets(dep, 20, stdin); clean_input(dep);
+    printf("Date arrivee (YYYY-MM-DD HH:MM): "); fgets(arr, 20, stdin); clean_input(arr);
+    printf("Status (On-Time/Delayed/Cancelled): "); fgets(status, 20, stdin); clean_input(status);
+
+    char sql[512];
+    sprintf(sql,"INSERT INTO flights(num_vol, origine, destination, date_dep, date_arr, status) "
+                "VALUES('%s','%s','%s','%s','%s','%s');",
+                num, org, dest, dep, arr, status);
+    if (db_execute(db, sql)) printf("\nVol ajoute.\n");
+
+    
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+void deleteFlightDB(sqlite3 *db) {
+    int id; printf("ID du vol a supprimer: "); scanf("%d",&id); getchar();
+    char sql[128]; sprintf(sql,"DELETE FROM flights WHERE id=%d;", id);
+    if (db_execute(db, sql)) printf("\nVol supprime.\n");
+
+    
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+void updateFlightStatusDB(sqlite3 *db) {
+    int id; char status[20];
+    printf("ID du vol: ");
+    scanf("%d",&id);
+    getchar();
+    printf("Nouveau status (On-Time/Delayed/Cancelled): ");
+    fgets(status, 20, stdin); 
+    clean_input(status);
+    char sql[128]; sprintf(sql,"UPDATE flights SET status='%s' WHERE id=%d;", status, id);
+    if (db_execute(db, sql)) printf("\nStatus mis a jour.\n");
+
+    
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+void showFlightsDB(sqlite3 *db) {
+    const char *sql = "SELECT * FROM flights;";
+    printFlightHeader();
+    if (sqlite3_exec(db, sql, printRow, 0, NULL) != SQLITE_OK)
+        fprintf(stderr,"Erreur affichage vols: %s\n", sqlite3_errmsg(db));}
+
+// -------------------- MENU --------------------
+ 
+// -------------------- CHECK-IN --------------------
+ 
+
+/* ===================== CALLBACK CHECK-IN ===================== */
+
+int printCheckinRow(void *NotUsed, int argc, char **argv, char **azColName){
+    printf("| %-3s | %-15s | %-10s | %-6s | %-6s | %-14s | %-25s |\n",
+           argv[0] ? argv[0] : "",   // id
+           argv[1] ? argv[1] : "",   // nom
+           argv[2] ? argv[2] : "",   // cin
+           argv[3] ? argv[3] : "",   // vol_id
+           argv[4] ? argv[4] : "",   // seat
+           argv[5] ? argv[5] : "",   // telephone
+           argv[6] ? argv[6] : "");  // email
+    return 0;
+}
+
+/* ===================== AFFICHAGE ===================== */
+
+ void printCheckinHeader(){
+    // On définit des largeurs fixes pour chaque titre
+    printf("\n| %-3s | %-15s | %-10s | %-6s | %-6s | %-14s | %-25s |\n", 
+           "ID", "Nom", "CIN", "Vol_id", "Seat", "Telephone", "Email");
+    printf("------------------------------------------------------------------------------------------------------\n");
+    }
+/* ===================== CHECK-IN ===================== */
+
+ void addCheckinDB(sqlite3 *db){
+    char nom[50], cin[20], seat[10], telephone[20], email[50];
+    int flight_id;
+
+    printf("Nom passager: ");
+    fgets(nom,50,stdin); clean_input(nom);
+
+    printf("CIN: ");
+    fgets(cin,20,stdin); clean_input(cin);
+
+    printf("ID vol: ");
+    scanf("%d",&flight_id); getchar();
+
+    printf("Siege: ");
+    fgets(seat,10,stdin); clean_input(seat);
+
+    printf("Telephone: ");
+    fgets(telephone,20,stdin); clean_input(telephone);
+
+    printf("Email: ");
+    fgets(email,50,stdin); clean_input(email);
+
+    char sql[512];
+    sprintf(sql,
+        "INSERT INTO passengers(nom,cin,vol_id,seat,telephone,email) "
+        "VALUES('%s','%s',%d,'%s','%s','%s');",
+        nom, cin, flight_id, seat, telephone, email);
+
+    if(db_execute(db, sql))
+        printf("\nCheck-in ajoute avec succes.\n");
+
+        
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+
+void deleteCheckinDB(sqlite3 *db){
+    int id;
+    printf("ID du check-in a supprimer: ");
+    scanf("%d", &id);
+
+    char sql[128];
+    sprintf(sql, "DELETE FROM passengers WHERE id=%d;", id);
+
+    if(db_execute(db, sql))
+        printf(" \nCheck-in supprime.\n");
+
+        
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+ void showCheckinsDB(sqlite3 *db){
+     const char *sql =
+        "SELECT id, nom, cin, vol_id, seat, "  
+        "IFNULL(telephone,'N/A'), "
+        "IFNULL(email,'N/A') "
+        "FROM passengers;";
+
+    printCheckinHeader();
+
+    if(sqlite3_exec(db, sql, printCheckinRow, 0, NULL) != SQLITE_OK){
+        fprintf(stderr, "Erreur affichage check-ins: %s\n", sqlite3_errmsg(db));
+    }
+}
+ 
+// -------------------- CREW --------------------
+int printCrewRow(void *NotUsed, int argc, char **argv, char **azColName) {
+    // On n'affiche que 4 colonnes ici (0 à 3)
+    printf("| %-4s | %-15s | %-12s | %-8s |\n",
+           argv[0] ? argv[0] : "",
+           argv[1] ? argv[1] : "",
+           argv[2] ? argv[2] : "",
+           argv[3] ? argv[3] : "N/A");
+    return 0;
+}
+void printCrewHeader() {
+    printf("\n| %-4s | %-15s | %-12s | %-8s |\n", "ID", "Nom", "Role", "Vol ID");
+    printf("------------------------------------------------------------\n");
+}
+
+void addCrewDB(sqlite3 *db){
+    char nom[50], role[30]; int flight_id;
+    printf("Nom: "); 
+    fgets(nom,50,stdin); 
+    nom[strcspn(nom,"\n")]=0;
+    printf("Role: "); 
+    fgets(role,30,stdin); 
+    role[strcspn(role,"\n")]=0;
+    printf("ID vol: "); 
+    scanf("%d",&flight_id); 
+    getchar();
+
+    char sql[256];
+    sprintf(sql,"INSERT INTO crew(nom,role,flight_id) VALUES('%s','%s',%d);",nom,role,flight_id);
+    if(db_execute(db, sql)) printf("\nMembre ajoute.\n");
+
+     while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+void deleteCrewDB(sqlite3 *db){
+    int id; printf("ID membre à supprimer: "); scanf("%d",&id);
+    char sql[128]; sprintf(sql,"DELETE FROM crew WHERE id=%d;",id);
+    if(db_execute(db, sql)) printf("\nMembre supprime.\n");
+
+     while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+ void showCrewDB(sqlite3 *db){
+    // Il est préférable de lister les colonnes pour être sûr de l'ordre
+    const char *sql = "SELECT id, nom, role, flight_id FROM crew;";
+    
+    printCrewHeader(); // Affiche le titre des colonnes
+
+    // On fait l appel a printCrewRow
+    if(sqlite3_exec(db, sql, printCrewRow, 0, NULL) != SQLITE_OK)
+        fprintf(stderr, "Erreur affichage crew: %s\n", sqlite3_errmsg(db));
+}
+
+// -------------------- GATES --------------------
+int printGateRow(void *NotUsed, int argc, char **argv, char **azColName) {
+    // On affiche uniquement les 4 colonnes de la table gates
+    printf("| %-3s | %-10s | %-12s | %-8s |\n",
+           argv[0] ? argv[0] : "NULL",
+           argv[1] ? argv[1] : "NULL",
+           argv[2] ? argv[2] : "NULL",
+           argv[3] ? argv[3] : "NULL");
+    return 0;
+}
+
+void printGateHeader() {
+    printf("\n| %-3s | %-10s | %-12s | %-8s |\n", "ID", "Code Gate", "Status", "Vol ID");
+    printf("----------------------------------------------------\n");
+}
+
+void addGateDB(sqlite3 *db){
+    char code[10], status[20]; int flight_id ;
+    printf("Code gate: ");
+    fgets(code,10,stdin); 
+    code[strcspn(code,"\n")]=0;
+    printf("Status: "); 
+    fgets(status,20,stdin); 
+    status[strcspn(status,"\n")]=0;
+    printf("ID du vol associe (0 si aucun) : ");
+    scanf("%d", &flight_id);
+
+    while(getchar() != '\n');
+
+    char sql[256];
+    sprintf(sql,"INSERT INTO gates(code,status,flight_id) VALUES('%s','%s',%d);",code,status,flight_id);
+    if(db_execute(db, sql)) printf("\nGate ajoutee.\n");
+
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+
+}
+
+void assignGateDB(sqlite3 *db){
+    int flight_id;
+    printf("ID vol: "); 
+    scanf("%d",&flight_id);
+
+    const char *find="SELECT id FROM gates WHERE status='Libre' LIMIT 1;";
+    sqlite3_stmt *stmt;
+    if(sqlite3_prepare_v2(db, find, -1, &stmt, 0)!=SQLITE_OK){
+        printf("Erreur SQL assignGate\n"); return;
+    }
+    int rc = sqlite3_step(stmt);
+    if(rc==SQLITE_ROW){
+        int gate_id = sqlite3_column_int(stmt,0);
+        char sql[128];
+        sprintf(sql,"UPDATE gates SET status='Occupee', flight_id=%d WHERE id=%d;",flight_id,gate_id);
+        db_execute(db, sql);
+        printf("Gate %d assignee au vol %d.\n", gate_id, flight_id);
+    } else printf("\nAucune gate libre.\n");
+    sqlite3_finalize(stmt);
+}
+
+void releaseGateDB(sqlite3 *db) {
+    char code[10];
+    printf("Entrez le code de la porte a liberer (ex: A1) : ");
+    scanf("%s", code);
+
+    char sql[128];
+    // On remet la porte à l'état initial
+    sprintf(sql, "UPDATE gates SET status='Libre', flight_id=id WHERE code='%s';", code);
+
+    if(sqlite3_exec(db, sql, 0, 0, NULL) == SQLITE_OK) {
+        printf(" La porte %s est maintenant LIBRE. \n", code);
+    } else {
+        printf("Erreur lors de la liberation de la porte.\n");
+    }
+
+    
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+  
+
+ void showGatesDB(sqlite3 *db){
+    // On force l'ordre des colonnes : id, code, status, flight_id
+    const char *sql = "SELECT id, code, status, flight_id FROM gates;";
+    
+    printGateHeader(); 
+
+    // On utilise printGateRow au lieu de printRow
+    if(sqlite3_exec(db, sql, printGateRow, 0, NULL) != SQLITE_OK)
+        fprintf(stderr, "Erreur affichage gates: %s\n", sqlite3_errmsg(db));
+}
+
+// -------------------- SECURITE --------------------
+
+
+int printSecurityRow(void *NotUsed, int argc, char **argv, char **azColName) {
+    // On ne lit que 3 colonnes ici (index 0, 1 et 2)
+    char *statut = (argv[2] && atoi(argv[2]) == 1) ? "INTERDIT" : "AUTORISE";
+    
+    printf("| %-12s | %-15s | %-10s |\n",
+           argv[0] ? argv[0] : "",
+           argv[1] ? argv[1] : "",
+           statut);
+    return 0;
+}
+
+
+void printSecurityHeader() {
+    printf("\n| %-12s | %-15s | %-10s |\n", "ID Passager", "CIN", "Statut");
+    printf("--------------------------------------------------\n");}
+void addSecurityDB(sqlite3 *db){
+    int passenger_id, interdit; char cin[20];
+    printf("ID passager: "); scanf("%d",&passenger_id); getchar();
+    printf("CIN: "); fgets(cin,20,stdin); cin[strcspn(cin,"\n")]=0;
+    printf("Interdit (0/1): "); scanf("%d",&interdit);
+
+    char sql[256];
+    sprintf(sql,"INSERT INTO security(passenger_id,cin,interdit) VALUES(%d,'%s',%d);",passenger_id,cin,interdit);
+    if(db_execute(db, sql)) printf("\nPassager ajouté.\n");
+
+     while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+void checkSecurityDB(sqlite3 *db){
+    int passenger_id; printf("ID passager: "); scanf("%d",&passenger_id);
+    const char *sql = "SELECT interdit FROM security WHERE passenger_id=?;";
+    sqlite3_stmt *stmt;
+    if(sqlite3_prepare_v2(db, sql, -1, &stmt, 0)!=SQLITE_OK){ printf("Erreur SQL\n"); return; }
+    sqlite3_bind_int(stmt,1,passenger_id);
+    if(sqlite3_step(stmt)==SQLITE_ROW){
+        int interdit = sqlite3_column_int(stmt,0);
+        if(interdit) printf("Passager interdit d'embarquement.\n");
+        else printf("Passager autorise.\n");
+    } else printf("Passager non trouve.\n");
+    sqlite3_finalize(stmt);
+
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+ void showSecurityDB(sqlite3 *db){
+    const char *sql = "SELECT passenger_id, cin, interdit FROM security;";
+    
+    printSecurityHeader(); // Affiche l'en-tête propre
+
+    // IMPORTANT : On utilise printSecurityRow pour ne pas planter
+    if(sqlite3_exec(db, sql, printSecurityRow, 0, NULL) != SQLITE_OK)
+        fprintf(stderr, "Erreur affichage securite: %s\n", sqlite3_errmsg(db));
+}
+// -------------------- NOTIFY --------------------
+ int printNotifyRow(void *NotUsed, int argc, char **argv, char **azColName) {
+    // On affiche uniquement les 4 colonnes : id, module, niveau, message
+    printf("| %-3s | %-12s | %-10s | %-60s |\n",
+           argv[0] ? argv[0] : "",
+           argv[1] ? argv[1] : "",
+           argv[2] ? argv[2] : "",
+           argv[3] ? argv[3] : "");
+    return 0;}
+    void printNotifyHeader() {
+    printf("\n| %-3s | %-12s | %-10s | %-60s |\n", "ID", "Module", "Niveau", "Message");
+    printf("------------------------------------------------------------------------------------------------\n");
+}
+
+ 
+void addNotifyDB(sqlite3 *db){
+    char module[20], niveau[20], message[200];
+    printf("Module: "); fgets(module,20,stdin); module[strcspn(module,"\n")]=0;
+    printf("Niveau: "); fgets(niveau,20,stdin); niveau[strcspn(niveau,"\n")]=0;
+    printf("Message: "); fgets(message,200,stdin); message[strcspn(message,"\n")]=0;
+
+    char sql[512];
+    sprintf(sql,"INSERT INTO notify(module,niveau,message) VALUES('%s','%s','%s');",module,niveau,message);
+    if(db_execute(db, sql)) printf("Notification ajoutee.\n");
+
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+void deleteNotifyDB(sqlite3 *db) {
+    int id;
+    printf("ID de la notification a supprimer: ");
+    
+    // On vérifie que l'utilisateur saisit bien un nombre
+    if (scanf("%d", &id) != 1) {
+        printf("Erreur : Veuillez saisir un ID valide (chiffre).\n");
+        while (getchar() != '\n'); // Nettoie le tampon en cas d'erreur
+        return;
+    }
+    getchar(); // Consomme le retour à la ligne restant dans le tampon
+
+    char sql[128];
+    sprintf(sql, "DELETE FROM notify WHERE id = %d;", id);
+
+    if (db_execute(db, sql)) {
+        printf("Notification ID %d supprimee avec succes.\n", id);
+    } else {
+        printf("Erreur lors de la suppression de la notification.\n");
+    }
+
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+ void showNotifyDB(sqlite3 *db){
+    // On sélectionne les 4 colonnes spécifiques
+    const char *sql = "SELECT id, module, niveau, message FROM notify;";
+    
+    printNotifyHeader(); 
+
+    // On utilise printNotifyRow au lieu de printRow pour éviter le decalage
+    if(sqlite3_exec(db, sql, printNotifyRow, 0, NULL) != SQLITE_OK)
+        fprintf(stderr, "Erreur affichage notify: %s\n", sqlite3_errmsg(db));
+}
+
+// -------------------- DASHBOARD --------------------
+
+void printDashboardHeader() {
+    printf("\n| %-10s | %-15s | %-15s | %-12s | %-8s |\n", 
+           "Num_Vol", "Origine", "Destination", "Statut", "gate");
+    printf("----------------------------------------------------------------------------\n");
+}
+
+int printDashboardRow(void *NotUsed, int argc, char **argv, char **azColName) {
+    // Affiche les 5 colonnes issues de la jointure
+    printf("| %-10s | %-15s | %-15s | %-12s | %-8s |\n",
+           argv[0] ? argv[0] : "N/A",
+           argv[1] ? argv[1] : "N/A",
+           argv[2] ? argv[2] : "N/A",
+           argv[3] ? argv[3] : "N/A",
+           argv[4] ? argv[4] : "LIBRE");
+    return 0;
+}
+ // AFFICHER le Dashboard (Jointure Vols + Portes)
+void showDashboardDB(sqlite3 *db){
+    const char *sql = 
+        "SELECT f.num_vol, f.origine, f.destination, f.status, IFNULL(g.code,'N/A') "
+        "FROM flights f LEFT JOIN gates g ON f.id = g.flight_id;";
+    
+    printDashboardHeader();
+
+    if(sqlite3_exec(db, sql, printDashboardRow, 0, NULL) != SQLITE_OK)
+        fprintf(stderr, "Erreur Dashboard: %s\n", sqlite3_errmsg(db));
+
+        while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+
+// AJOUTER (Redirige vers l'ajout de vol car le dashboard en dépend)
+void addDashboardFlight(sqlite3 *db) {
+    printf("  Redirection vers l'ajout de vol...\n");
+    addFlightDB(db); // Appelle ta fonction existante pour ajouter un vol
+}
+
+// SUPPRIMER (Supprime un vol par son numéro)
+void deleteDashboardFlight(sqlite3 *db) {
+    char num_vol[20];
+    printf("Entrez le Numero de vol a supprimer du Dashboard: ");
+    fgets(num_vol, 20, stdin);
+    num_vol[strcspn(num_vol, "\n")] = 0;
+
+    char sql[128];
+    sprintf(sql, "DELETE FROM flights WHERE num_vol = '%s';", num_vol);
+
+    if(db_execute(db, sql)) {
+        printf("Vol %s supprime de la base et du dashboard.\n", num_vol);
+    }
+    while(getchar() != '\n'); // Vide le buffer du scanf
+    getchar();
+}
+ 
+// -------------------- MENUS --------------------
+ void menuFlights(sqlite3 *db){
+    int choix; 
+    do {
+        system("cls"); // On nettoie l'écran pour entrer dans le module Vols
+
+        // Titre du sous-menu en Bleu
+        printf(T_BLEU "\n  +------------------------------------------+\n");
+        printf("  | "    "          GESTION DES VOLS            " T_BLEU "|\n");
+        printf("  +------------------------------------------+\n" RESET);
+
+        // Options aérées avec \n\n
+        printf("\n  " T_BLEU "1." RESET " Ajouter un nouveau vol\n");
+        printf("\n  " T_BLEU "2." RESET " Supprimer un vol (par ID)\n");
+        printf("\n  " T_BLEU "3." RESET " Afficher la liste complete\n");
+        printf("\n  " T_BLEU "4." RESET " Mettre à jour le statut (MAJ)\n");
+        printf("\n  " T_ROUGE "0." RESET " Retour au Menu Principal\n");
+
+        printf(T_BLEU "\n  --------------------------------------------\n" RESET);
+         
+
+        if (scanf("%d", &choix) != 1) {
+            while(getchar() != '\n'); 
+            choix = -1;
+        }
+        getchar(); 
+
+        // Exécution des fonctions
+        switch(choix){ 
+            case 1: addFlightDB(db);
+                break; 
+            case 2: deleteFlightDB(db); 
+                break;
+            case 3: 
+                showFlightsDB(db); 
+                printf("\n  Appuyez sur Entrer pour  revenir..");
+                getchar(); // Pause pour laisser le temps de lire le tableau
+                break; 
+            case 4: updateFlightStatusDB(db);
+                break;
+            case 0:
+                 break; 
+            default: 
+                printf(T_ROUGE "\n  Choix invalide !" RESET);
+                  // Petite pause de 1 seconde avant de rafraîchir
+        }
+    } while(choix != 0);
+}
+
+  void menuCheckin(sqlite3 *db){ 
+    int choix;
+    do {
+        system("cls"); // Nettoie l'écran pour le module Check-in
+
+        // Titre du sous-menu en Bleu
+        printf(T_BLEU "\n  +------------------------------------------+\n");
+        printf("  | "   "          GESTION DES CHECK-INS         " T_BLEU "|\n");
+        printf("  +------------------------------------------+\n" RESET);
+
+        // Options aérées
+        printf("\n  " T_BLEU "1." RESET " Enregistrer un nouveau passager\n");
+        printf("\n  " T_BLEU "2." RESET " Annuler un check-in (Supprimer)\n");
+        printf("\n  " T_BLEU "3." RESET " Afficher la liste des enregistrements\n"); 
+        printf("\n  " T_ROUGE "0." RESET " Retour au Menu Principal\n");
+        printf(T_BLEU "\n  --------------------------------------------\n" RESET);
+         
+
+        if (scanf("%d", &choix) != 1) {
+            while(getchar() != '\n'); 
+            choix = -1;
+        }
+        getchar(); 
+
+        switch(choix){
+            case 1: 
+                addCheckinDB(db); 
+                break;
+            case 2: 
+                deleteCheckinDB(db); 
+                break;
+            case 3: 
+                showCheckinsDB(db); 
+                printf("\n  Appuyez sur Entrer pour revenir...");
+                getchar(); // Indispensable pour voir le tableau avant le cls
+                break; 
+            case 0: break;
+            default: 
+                printf(T_ROUGE "\n  Choix invalide !" RESET);
+                 
+        }
+    } while(choix != 0);
+}
+
+ 
+ void menuCrew(sqlite3 *db){
+    int choix; 
+    do {
+        system("cls"); // Efface l'écran pour rester propre
+
+        // Titre du sous-menu en Bleu
+        printf(T_BLEU "\n  +------------------------------------------+\n");
+        printf("  | "    "        GESTION DE L'EQUIPAGE (CREW)       " T_BLEU "|\n");
+        printf("  +------------------------------------------+\n" RESET);
+
+        // Options aérées
+        printf("\n  " T_BLEU "1." RESET " Ajouter un membre d'équipage\n");
+        printf("\n  " T_BLEU "2." RESET " Supprimer un membre (par ID/CIN)\n");
+        printf("\n  " T_BLEU "3." RESET " Afficher la liste du personnel\n");        
+        printf("\n  " T_ROUGE "0." RESET " Retour au Menu Principal\n");
+        printf(T_BLEU "\n  --------------------------------------------\n" RESET);
+        
+
+        // Sécurité pour la saisie
+        if (scanf("%d", &choix) != 1) {
+            while(getchar() != '\n'); 
+            choix = -1;
+        }
+        getchar(); // Consomme le retour à la ligne
+
+        switch(choix){
+            case 1: 
+                addCrewDB(db); 
+                break;
+            case 2: 
+                deleteCrewDB(db); 
+                break;
+            case 3: 
+            system("cls");
+                showCrewDB(db);
+                printf("\n  Appuyez sur Entrer pour revenir...");
+                while(getchar() != '\n'); 
+                 printf("\033[3J\033[H\033[2J"); 
+                system("cls");
+                break; 
+            case 0: 
+                printf("\033[3J\033[H\033[2J");
+                system("cls");
+                break; 
+            default: 
+                printf(T_ROUGE "\n  Choix invalide !" RESET);
+                 
+        }
+    } while(choix != 0);
+}
+ void menuGates(sqlite3 *db){ 
+    int choix; 
+    do {
+        system("cls"); // Nettoyage pour un affichage propre
+
+        // Titre du sous-menu en Bleu
+        printf(T_BLEU "\n  +------------------------------------------+\n");
+        printf("  | "  "     PORTES D'EMBARQUEMENT (GATES)      " T_BLEU "|\n");
+        printf("  +------------------------------------------+\n" RESET);
+
+        // Options aérées
+        printf("\n  " T_BLEU "1." RESET " Ajouter une nouvelle porte\n");
+        printf("\n  " T_BLEU "2." RESET " Afficher l'etat des portes\n");
+        printf("\n  " T_BLEU "3." RESET " Assigner une porte a un vol\n");       
+        printf("\n  " T_BLEU "4." RESET " Liberer une porte (Disponibilite)\n");
+        printf("\n  " T_ROUGE "0." RESET " Retour au Menu Principal\n");
+        printf(T_BLEU "\n  --------------------------------------------\n" RESET);
+        
+
+        if (scanf("%d", &choix) != 1) {
+            while(getchar() != '\n'); 
+            choix = -1;
+        }
+        getchar(); 
+
+        switch(choix){ 
+            case 1: 
+                addGateDB(db); 
+
+                break; 
+            case 2: 
+                showGatesDB(db); 
+                printf("\n Appuyez sur Entrer pour revenir...");
+                getchar(); 
+                break;
+            case 3: 
+                assignGateDB(db); 
+                printf("\n gate assigne avec succes... ");
+                getchar();
+                break;
+            case 4: 
+                releaseGateDB(db); 
+                printf("\n gate libere avec succes...");
+                 break;
+            case 0: break; 
+            default: 
+                printf(T_ROUGE "\n  Choix invalide !" RESET);
+                 
+        }
+    } while(choix != 0);
+}
+
+ void menuSecurity(sqlite3 *db){ 
+    int choix; 
+    do {
+        system("cls"); // Nettoyage de l'écran pour le module Sécurité
+
+        // Titre du sous-menu en Bleu
+        printf(T_BLEU "\n  +------------------------------------------+\n");
+        printf("  | "    "        CONTROLE DE SECURITE               " T_BLEU "|\n");
+        printf("  +------------------------------------------+\n" RESET);
+
+        // Options aérées
+        printf("\n  " T_BLEU "1." RESET " Ajouter une fiche de securite\n");
+        printf("\n  " T_BLEU "2." RESET " Verifier un passager (Check)\n");
+        printf("\n  " T_BLEU "3." RESET " Afficher le registre de securite\n"); 
+        printf("\n  " T_ROUGE "0." RESET " Retour au Menu Principal\n");
+        printf(T_BLEU "\n  --------------------------------------------\n" RESET);
+      
+
+        if (scanf("%d", &choix) != 1) {
+            while(getchar() != '\n'); 
+            choix = -1;
+        }
+        getchar(); 
+
+        switch(choix){ 
+            case 1: 
+                addSecurityDB(db); 
+                break; 
+            case 2: 
+                checkSecurityDB(db); 
+                break;
+            case 3: 
+                showSecurityDB(db); 
+                printf("\n  Appuyez sur Entrer pour revenir...");
+                getchar(); // Indispensable pour lire la liste
+                break; 
+            case 0:
+                printf("\033[3J\033[H\033[2J");
+                system("cls");
+                break; 
+            default: 
+                printf(T_ROUGE "\n  Choix invalide !" RESET);
+               
+        }
+    } while(choix != 0);
+}
+ 
+ void menuNotify(sqlite3 *db){ 
+    int choix; 
+    do {
+        system("cls"); // Nettoyage de l'écran pour le module Notifications
+
+        // Titre du sous-menu en Bleu
+        printf(T_BLEU "\n  +------------------------------------------+\n");
+        printf("  | "    "        NOTIFICATIONS ET ALERTES           " T_BLEU "|\n");
+        printf("  +------------------------------------------+\n" RESET);
+
+        // Options aérées
+        printf("\n  " T_BLEU "1." RESET " Envoyer une nouvelle notification\n");
+        printf("\n  " T_BLEU "2." RESET " Supprimer une notification (Archivage)\n");
+        printf("\n  " T_BLEU "3." RESET " Afficher l'historique des alertes\n");
+        printf("\n  " T_ROUGE "0." RESET " Retour au Menu Principal\n");
+        printf(T_BLEU "\n  --------------------------------------------\n" RESET);
+         
+
+        if (scanf("%d", &choix) != 1) {
+            while(getchar() != '\n'); 
+            choix = -1;
+        }
+        getchar(); 
+
+        switch(choix){ 
+            case 1: 
+                addNotifyDB(db); 
+                 
+                break; 
+            case 2: 
+                deleteNotifyDB(db); 
+                
+                break; 
+            case 3: 
+                showNotifyDB(db); 
+                printf("\n  Appuyez sur Entrer pour revenir...");
+                getchar(); // Indispensable pour lire les messages
+                break; 
+            case 0: break; 
+            default: 
+                printf(T_ROUGE "\n  Choix invalide !" RESET);
+                
+        }
+    } while(choix != 0);
+}
+
+ 
+ void menuDashboard(sqlite3 *db){ 
+    int choix;
+    do {
+        system("cls"); // Nettoyage de l'écran
+
+        // Titre du Dashboard avec un style "Monitoring"
+        printf(T_BLEU "\n  ╔══════════════════════════════════════════╗\n");
+        printf("  ║"   "        TABLEAU DE BORD (DASHBOARD)       " T_BLEU "║\n");
+        printf("  ╚══════════════════════════════════════════╝\n" RESET);
+
+        // Options espacées pour un look "Premium"
+        printf("\n  " T_BLEU "1." RESET "   Afficher tous les vols et portes\n");
+        printf("\n  " T_BLEU "2." RESET "   Ajouter une entree dashboard\n");
+        printf("\n  " T_BLEU "3." RESET "   Supprimer une entree\n");
+        printf("\n  " T_ROUGE "0." RESET " Retour au Menu Principal\n");
+        printf(T_BLEU "\n  ════════════════════════════════════════════\n" RESET);
+         
+
+        if (scanf("%d", &choix) != 1) {
+            while(getchar() != '\n'); 
+            choix = -1;
+        }
+        getchar();
+
+        switch(choix){
+            case 1: 
+                // Ici, on affiche le grand tableau
+                showDashboardDB(db); 
+                printf("\n  Appuyez sur Entrer pour fermer le monitoring...");
+                getchar(); 
+                break; 
+            case 2: 
+                addDashboardFlight(db); 
+                break; 
+            case 3: 
+                deleteDashboardFlight(db); 
+                break; 
+            case 0: break; 
+            default: 
+                printf(T_ROUGE "\n  Erreur de commande !" RESET);
+                
+        }
+    } while(choix != 0);
+}
+ void cleanAll() {
+    // 1. Vide l'historique caché au-dessus (\033[3J)
+    // 2. Remonte le curseur tout en haut (\033[H)
+    // 3. Efface l'écran actuel (\033[2J)
+    printf("\033[3J\033[H\033[2J");
+    
+    // 4. Commande Windows standard par sécurité
+    system("cls");
+}
+ 
+// -------------------- MAIN --------------------
+  
+
+int main() {
+    SetConsoleOutputCP(65001);
+    sqlite3 *db;
+    
+    // 1. Ouverture de la base
+    if(sqlite3_open("aeroport.db", &db)) {
+        fprintf(stderr, "Impossible d'ouvrir la base: %s\n", sqlite3_errmsg(db));
+        return 1;
+    }
+
+    // 2. Configuration initiale du terminal
+    system("color F0"); // Fond blanc, Texte noir
+    
+    int choix;
+    do {
+        // Efface l'écran pour que le menu soit toujours en haut
+        system("cls"); 
+
+        // --- AFFICHAGE DU MENU STYLISÉ ---
+        printf(T_BLEU "\n  ╔════════════════════════════════════════════╗\n");
+        printf("  ║"   "        SySTEME DE GESTION AEROPORT         " T_BLEU "║\n");
+        printf("  ╚════════════════════════════════════════════╝\n" RESET);
+
+        printf("\n  " T_BLEU "1." RESET " ✈️  Gestion des Vols\n");
+        printf("\n " T_BLEU "2." RESET " 🛂  Check-ins Passagers\n");
+        printf("\n " T_BLEU "3." RESET " 👨‍✈️  Gestion de l'Equipage (Crew)\n");
+        printf("\n " T_BLEU "4." RESET " 🚪  Portes d'Embarquement (Gates)\n");
+        printf("\n " T_BLEU "5." RESET " 🛡️  Controle de Securite\n");
+        printf("\n " T_BLEU "6." RESET " 📊  " T_BLEU "TABLEAU DE BORD (DASHBOARD)\n" RESET);
+        printf("\n " T_BLEU "7." RESET " 🔔  Notifications\n");
+        printf("\n " T_ROUGE "0. ❌  Quitter le programme\n" RESET);
+
+        
+        printf(T_BLEU "\n  ════════════════════════════════════════════\n" RESET);
+        printf("  Choix : ");
+        
+        if (scanf("%d", &choix) != 1) {
+            choix = -1; // Gestion d'erreur si l'utilisateur tape une lettre
+        }
+        getchar(); // Consomme le \n
+
+        // --- LOGIQUE DES MENUS ---
+        switch(choix) {
+            case 1: menuFlights(db); cleanAll();break;
+            case 2: menuCheckin(db); break;
+            case 3: menuCrew(db); break;
+            case 4: menuGates(db); break;
+            case 5: menuSecurity(db); break;
+            case 6: menuDashboard(db); break;
+            case 7: menuNotify(db); break;
+            case 0: 
+                printf(T_BLEU "\n  Au revoir ! Fermeture du systeme...\n" RESET); 
+                break;
+            default: 
+                printf(T_ROUGE "  Choix invalide ! Appuyez sur Entrer." RESET);
+                getchar();
+        }
+    } while(choix != 0);
+
+    sqlite3_close(db);
+    return 0;
+}
